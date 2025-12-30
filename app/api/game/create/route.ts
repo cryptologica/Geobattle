@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       for (const state of US_STATES) {
         territories.push({
           game_id: game.id,
-          geo_id: `US-${state.id}`,
+          geo_id: state.id,
           name: state.name,
           type: 'us_state',
           parent_country: 'USA',
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       for (const state of AU_STATES) {
         territories.push({
           game_id: game.id,
-          geo_id: `AU-${state.id}`,
+          geo_id: state.id,
           name: state.name,
           type: 'au_state',
           parent_country: 'AUS',

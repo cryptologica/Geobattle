@@ -1,0 +1,15 @@
+{
+  "type": "Topology",
+  "arcs": [],
+  "objects": {
+    "states": {
+      "type": "GeometryCollection",
+      "geometries": []
+    }
+  },
+  "bbox": [113, -43.6, 153.6, -10.7],
+  "transform": {
+    "scale": [0.0040596059605960596, 0.00329032903290329],
+    "translate": [113, -43.6]
+  }
+}

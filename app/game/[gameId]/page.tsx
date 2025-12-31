@@ -16,6 +16,7 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
   const [resources, setResources] = useState<UserGameResources | null>(null);
   const [territories, setTerritories] = useState<TerritoryWithOwnership[]>([]);
   const [attacks, setAttacks] = useState<AttackWithDetails[]>([]);
+  const [players, setPlayers] = useState<Array<{ id: string; name: string; image: string }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,7 +28,8 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
   useEffect(() => {
     if (session?.user?.id) {
       loadGameData();
-      subscribeToUpdates();
+      const cleanup = subscribeToUpdates();
+      return cleanup;
     }
   }, [session, params.gameId]);
 
@@ -57,7 +59,7 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
       }
 
       // Load territories with ownership
-      const { data: territoryData } = await supabase
+      const { data: territoryData, error: territoryError } = await supabase
         .from('territories')
         .select(`
           *,
@@ -67,6 +69,10 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
           )
         `)
         .eq('game_id', params.gameId);
+
+      if (territoryError) {
+        console.error('Error loading territories:', territoryError);
+      }
 
       if (territoryData) {
         setTerritories(territoryData as any);
@@ -88,6 +94,21 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
       if (attackData) {
         setAttacks(attackData as any);
       }
+
+      // Load all players in the game
+      const { data: playersData } = await supabase
+        .from('user_games')
+        .select(`
+          user:users (id, name, image)
+        `)
+        .eq('game_id', params.gameId);
+
+      if (playersData) {
+        const playerList = playersData
+          .map((p: any) => p.user)
+          .filter((u: any) => u && u.id);
+        setPlayers(playerList);
+      }
     } catch (error) {
       console.error('Error loading game data:', error);
     } finally {
@@ -107,8 +128,22 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
           table: 'ownership',
           filter: `game_id=eq.${params.gameId}`,
         },
-        () => {
-          loadGameData();
+        async () => {
+          // Only reload territories when ownership changes
+          const { data: territoryData } = await supabase
+            .from('territories')
+            .select(`
+              *,
+              ownership (
+                *,
+                users (id, name, image)
+              )
+            `)
+            .eq('game_id', params.gameId);
+          
+          if (territoryData) {
+            setTerritories(territoryData as any);
+          }
         }
       )
       .subscribe();
@@ -123,8 +158,23 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
           schema: 'public',
           table: 'attacks',
         },
-        () => {
-          loadGameData();
+        async () => {
+          // Only reload attacks when attacks change
+          const { data: attackData } = await supabase
+            .from('attacks')
+            .select(`
+              *,
+              territory:territories(*),
+              attacker:users!attacks_attacker_id_fkey(id, name, image),
+              defender:users!attacks_defender_id_fkey(id, name, image),
+              game:games(id, name)
+            `)
+            .eq('defender_id', session!.user.id)
+            .eq('status', 'pending');
+
+          if (attackData) {
+            setAttacks(attackData as any);
+          }
         }
       )
       .subscribe();
@@ -140,8 +190,18 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
           table: 'user_game_resources',
           filter: `user_id=eq.${session!.user.id}`,
         },
-        () => {
-          loadGameData();
+        async () => {
+          // Only reload resources when they change
+          const { data: resourceData } = await supabase
+            .from('user_game_resources')
+            .select('*')
+            .eq('user_id', session!.user.id)
+            .eq('game_id', params.gameId)
+            .single();
+
+          if (resourceData) {
+            setResources(resourceData);
+          }
         }
       )
       .subscribe();
@@ -187,6 +247,7 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
             game={game}
             territories={territories}
             userId={session!.user.id}
+            players={players}
             onAction={loadGameData}
           />
         </div>

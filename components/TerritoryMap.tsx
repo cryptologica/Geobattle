@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import { Game, TerritoryWithOwnership } from '@/lib/types';
 import * as topojson from 'topojson-client';
 
@@ -9,46 +9,64 @@ interface TerritoryMapProps {
   game: Game;
   territories: TerritoryWithOwnership[];
   userId: string;
+  players: Array<{ id: string; name: string; image: string }>;
   onAction: () => void;
 }
 
-export function TerritoryMap({ game, territories, userId, onAction }: TerritoryMapProps) {
+export function TerritoryMap({ game, territories, userId, players, onAction }: TerritoryMapProps) {
   const [topoData, setTopoData] = useState<any>(null);
   const [selectedTerritory, setSelectedTerritory] = useState<TerritoryWithOwnership | null>(null);
   const [actionType, setActionType] = useState<'claim' | 'attack' | null>(null);
   const [loading, setLoading] = useState(false);
+  const [position, setPosition] = useState({ coordinates: [0, 0], zoom: 1 });
+
+  function handleMoveEnd(position: any) {
+    setPosition(position);
+  }
 
   useEffect(() => {
     loadMapData();
-  }, [game]);
+  }, [game?.use_us_states, game?.use_au_states, game?.enabled_countries?.join(',')]);
 
   async function loadMapData() {
     try {
-      let mapData: any = { type: 'Topology', objects: {}, arcs: [] };
+      const allGeographies: any[] = [];
       
       // Load world countries if any non-US/AU countries are enabled
       const hasOtherCountries = game.enabled_countries.some(
         (c) => c !== 'USA' && c !== 'AUS'
       );
 
-      if (hasOtherCountries || (!game.use_us_states && game.enabled_countries.includes('USA'))) {
+      if (hasOtherCountries || (!game.use_us_states && game.enabled_countries.includes('USA')) || (!game.use_au_states && game.enabled_countries.includes('AUS'))) {
         const worldResponse = await fetch('/maps/world-countries.json');
         const worldData = await worldResponse.json();
-        mapData = worldData;
+        const worldFeatures = topojson.feature(worldData, worldData.objects.countries) as any;
+        allGeographies.push(...worldFeatures.features);
       }
 
       // Load US states if enabled
       if (game.use_us_states && game.enabled_countries.includes('USA')) {
         const usResponse = await fetch('/maps/us-states.json');
         const usData = await usResponse.json();
-        
-        // Merge with existing map data (simplified - in production, properly merge TopoJSON)
-        if (!mapData.objects.countries && usData.objects.states) {
-          mapData = usData;
-        }
+        const usFeatures = topojson.feature(usData, usData.objects.states) as any;
+        allGeographies.push(...usFeatures.features);
       }
 
-      setTopoData(mapData);
+      // Load Australian states if enabled
+      if (game.use_au_states && game.enabled_countries.includes('AUS')) {
+        const auResponse = await fetch('/maps/au-states.json');
+        const auData = await auResponse.json();
+        const auFeatures = topojson.feature(auData, auData.objects.states) as any;
+        allGeographies.push(...auFeatures.features);
+      }
+
+      // Create a FeatureCollection with all geographies
+      const combinedData = {
+        type: 'FeatureCollection',
+        features: allGeographies
+      };
+
+      setTopoData(combinedData);
     } catch (error) {
       console.error('Error loading map data:', error);
     }
@@ -69,15 +87,17 @@ export function TerritoryMap({ game, territories, userId, onAction }: TerritoryM
       return '#9ca3af'; // Darker gray for disabled
     }
 
-    if (!territory.ownership || !territory.ownership.user_id) {
+    // Ownership comes as an array from Supabase relationship
+    const ownership = Array.isArray(territory.ownership) && territory.ownership.length > 0 
+      ? territory.ownership[0] 
+      : null;
+
+    if (!ownership || !ownership.user_id) {
       return '#dbeafe'; // Light blue for unclaimed
     }
 
-    if (territory.ownership.user_id === userId) {
-      return '#86efac'; // Green for owned by user
-    }
-
-    return '#fca5a5'; // Red for enemy owned
+    // Use pattern fill for owned territories
+    return `url(#pattern-${ownership.user_id})`;
   }
 
   function handleTerritoryClick(geoId: string) {
@@ -89,10 +109,15 @@ export function TerritoryMap({ game, territories, userId, onAction }: TerritoryM
 
     setSelectedTerritory(territory);
 
+    // Ownership comes as an array from Supabase relationship
+    const ownership = Array.isArray(territory.ownership) && territory.ownership.length > 0 
+      ? territory.ownership[0] 
+      : null;
+
     // Determine action type
-    if (!territory.ownership || !territory.ownership.user_id) {
+    if (!ownership || !ownership.user_id) {
       setActionType('claim');
-    } else if (territory.ownership.user_id !== userId) {
+    } else if (ownership.user_id !== userId) {
       setActionType('attack');
     } else {
       setActionType(null); // Can't attack own territory
@@ -140,49 +165,111 @@ export function TerritoryMap({ game, territories, userId, onAction }: TerritoryM
     );
   }
 
-  // Get the first object from the topology
-  const objectKey = Object.keys(topoData.objects)[0];
-  const geoData = topoData.objects[objectKey];
+  // Calculate projection config based on enabled territories
+  const getProjectionConfig = () => {
+    if (game.use_us_states && !game.use_au_states && !hasOtherCountries) {
+      return { scale: 800, center: [-96, 38] as [number, number] };
+    }
+    if (game.use_au_states && !game.use_us_states && !hasOtherCountries) {
+      return { scale: 800, center: [133, -27] as [number, number] };
+    }
+    return { scale: 147, center: [0, 20] as [number, number] };
+  };
+
+  const hasOtherCountries = game.enabled_countries.some(
+    (c) => c !== 'USA' && c !== 'AUS'
+  );
+
+  function handleZoomIn() {
+    if (position.zoom >= 4) return;
+    setPosition(pos => ({ ...pos, zoom: pos.zoom * 1.5 }));
+  }
+
+  function handleZoomOut() {
+    if (position.zoom <= 1) return;
+    setPosition(pos => ({ ...pos, zoom: pos.zoom / 1.5 }));
+  }
 
   return (
     <div className="relative h-full bg-white dark:bg-gray-800">
+      {/* Zoom Controls */}
+      <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <button
+          onClick={handleZoomIn}
+          className="bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded shadow-lg"
+          title="Zoom In"
+        >
+          +
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded shadow-lg"
+          title="Zoom Out"
+        >
+          −
+        </button>
+      </div>
+
       <div className="h-full flex items-center justify-center p-4">
         <ComposableMap
           projection="geoMercator"
-          projectionConfig={{
-            scale: game.use_us_states ? 800 : 147,
-            center: game.use_us_states ? [-96, 38] : [0, 20],
-          }}
+          projectionConfig={getProjectionConfig()}
           className="w-full h-full"
         >
-          <Geographies geography={topoData}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const geoId = geo.id || geo.properties.name;
-                const territory = getTerritoryByGeoId(String(geoId));
-                
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill={getFillColor(String(geoId))}
-                    stroke="#ffffff"
-                    strokeWidth={0.5}
-                    style={{
-                      default: { outline: 'none' },
-                      hover: {
-                        outline: 'none',
-                        fill: territory && !territory.is_disabled ? '#fbbf24' : undefined,
-                        cursor: territory && !territory.is_disabled ? 'pointer' : 'default',
-                      },
-                      pressed: { outline: 'none' },
-                    }}
-                    onClick={() => handleTerritoryClick(String(geoId))}
-                  />
+          <defs>
+            {players.map((player) => (
+              <pattern
+                key={player.id}
+                id={`pattern-${player.id}`}
+                patternUnits="userSpaceOnUse"
+                width="5"
+                height="5"
+              >
+                <image
+                  href={player.image}
+                  x="0"
+                  y="0"
+                  width="5"
+                  height="5"
+                  preserveAspectRatio="xMidYMid slice"
+                />
+              </pattern>
+            ))}
+          </defs>
+          <ZoomableGroup
+            zoom={position.zoom}
+            center={position.coordinates as [number, number]}
+            onMoveEnd={handleMoveEnd}
+          >
+            <Geographies geography={topoData}>
+              {({ geographies }) =>
+                geographies.map((geo) => {
+                  const geoId = geo.id || geo.properties.name;
+                  const territory = getTerritoryByGeoId(String(geoId));
+                  
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={getFillColor(String(geoId))}
+                      stroke="#ffffff"
+                      strokeWidth={0.5}
+                      style={{
+                        default: { outline: 'none' },
+                        hover: {
+                          outline: 'none',
+                          fill: territory && !territory.is_disabled ? '#fbbf24' : undefined,
+                          cursor: territory && !territory.is_disabled ? 'pointer' : 'default',
+                        },
+                        pressed: { outline: 'none' },
+                      }}
+                      onClick={() => handleTerritoryClick(String(geoId))}
+                    />
                 );
               })
             }
           </Geographies>
+          </ZoomableGroup>
         </ComposableMap>
       </div>
 
@@ -242,21 +329,25 @@ export function TerritoryMap({ game, territories, userId, onAction }: TerritoryM
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
+      <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 max-h-[60vh] overflow-y-auto">
         <h4 className="font-semibold mb-2 text-sm">Legend</h4>
         <div className="space-y-1 text-xs">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-[#dbeafe] border border-gray-300"></div>
             <span>Unclaimed</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-[#86efac] border border-gray-300"></div>
-            <span>Your Territory</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-[#fca5a5] border border-gray-300"></div>
-            <span>Enemy Territory</span>
-          </div>
+          {players.map((player) => (
+            <div key={player.id} className="flex items-center gap-2">
+              <img
+                src={player.image}
+                alt={player.name}
+                className="w-4 h-4 rounded-sm border border-gray-300 object-cover"
+              />
+              <span className={player.id === userId ? 'font-bold' : ''}>
+                {player.name} {player.id === userId ? '(You)' : ''}
+              </span>
+            </div>
+          ))}
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-[#9ca3af] border border-gray-300"></div>
             <span>Disabled</span>

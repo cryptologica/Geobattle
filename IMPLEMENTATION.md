@@ -169,8 +169,6 @@ These should be called via Supabase Edge Function on a cron schedule.
 
 ## 🐛 Known Issues
 
-- Australian states TopoJSON is placeholder
-- No map component yet (critical)
 - No attack notification system yet
 - No admin panel yet
 - No automated cron for daily resets

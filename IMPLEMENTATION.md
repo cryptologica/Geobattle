@@ -167,18 +167,9 @@ These should be called via Supabase Edge Function on a cron schedule.
 - Game creators can disable specific territories
 - Game creators can grant extra resources to players
 
-## 🐛 Known Issues
-
-- No attack notification system yet
-- No admin panel yet
-- No automated cron for daily resets
-- Auto-resolve for expired attacks needs cron trigger
 
 ## 📝 Next Steps Priority
 
-1. **Build TerritoryMap component** - Users can't play without this
-2. **Build main game page** - Integrate all components
-3. **Add AttackNotifications** - Users need to see threats
-4. **Set up Supabase Edge Function** - For daily resets
-5. **Build admin panel** - For game management
-6. **Add proper Australian TopoJSON** - Complete map coverage
+1. **Add AttackNotifications** - Users need to see threats
+2. **Set up Supabase Edge Function** - For daily resets
+3. **Build admin panel** - For game management

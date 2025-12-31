@@ -84,48 +84,88 @@ export async function POST(request: NextRequest) {
       console.error('Resource initialization error:', resourceError);
     }
 
-    // Seed territories
-    const territories = [];
+    // Add test user in development environment
+    const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
+    if (process.env.NODE_ENV === 'development') {
+      // Check if test user exists
+      const { data: testUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', TEST_USER_ID)
+        .single();
 
-    // Add enabled countries (excluding USA and AUS if using states)
-    for (const countryId of enabledCountries) {
-      if (countryId === 'USA' && useUSStates) continue;
-      if (countryId === 'AUS' && useAUStates) continue;
+      if (testUser) {
+        // Add test user to game
+        const { error: testUserGameError } = await supabase
+          .from('user_games')
+          .insert({
+            user_id: TEST_USER_ID,
+            game_id: game.id,
+          });
 
-      const country = WORLD_COUNTRIES.find((c) => c.id === countryId);
-      if (country) {
-        territories.push({
-          game_id: game.id,
-          geo_id: country.id,
-          name: country.name,
-          type: 'country',
-          parent_country: null,
-        });
+        if (testUserGameError) {
+          console.error('Test user game join error:', testUserGameError);
+        }
+
+        // Initialize test user's resources
+        const { error: testResourceError } = await supabase
+          .from('user_game_resources')
+          .insert({
+            user_id: TEST_USER_ID,
+            game_id: game.id,
+            available_attacks: attacksPerDay,
+            available_claims: claimsPerDay,
+          });
+
+        if (testResourceError) {
+          console.error('Test user resource initialization error:', testResourceError);
+        }
       }
     }
 
-    // Add US states if enabled
-    if (useUSStates && enabledCountries.includes('USA')) {
+    // Seed territories
+    const territories = [];
+
+    // Add ALL countries (mark as disabled if not enabled)
+    for (const country of WORLD_COUNTRIES) {
+      // Skip USA (840) and Australia (036) if using states for those countries
+      if (country.id === '840' && useUSStates) continue;
+      if (country.id === '036' && useAUStates) continue;
+
+      territories.push({
+        game_id: game.id,
+        geo_id: country.id,
+        name: country.name,
+        type: 'country',
+        parent_country: null,
+        is_disabled: !enabledCountries.includes(country.id),
+      });
+    }
+
+    // Add ALL US states if USA is in enabled countries (mark as disabled if not using states)
+    if (enabledCountries.includes('840')) {
       for (const state of US_STATES) {
         territories.push({
           game_id: game.id,
           geo_id: state.id,
           name: state.name,
           type: 'us_state',
-          parent_country: 'USA',
+          parent_country: '840',
+          is_disabled: !useUSStates,
         });
       }
     }
 
-    // Add AU states if enabled
-    if (useAUStates && enabledCountries.includes('AUS')) {
+    // Add ALL AU states if AUS is in enabled countries (mark as disabled if not using states)
+    if (enabledCountries.includes('036')) {
       for (const state of AU_STATES) {
         territories.push({
           game_id: game.id,
           geo_id: state.id,
           name: state.name,
           type: 'au_state',
-          parent_country: 'AUS',
+          parent_country: '036',
+          is_disabled: !useAUStates,
         });
       }
     }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { WORLD_COUNTRIES } from '@/lib/mapData';
 import Link from 'next/link';
+import Modal from '@/components/Modal';
 
 export default function CreateGamePage() {
   const { data: session, status } = useSession();
@@ -19,6 +20,15 @@ export default function CreateGamePage() {
   const [useAUStates, setUseAUStates] = useState(false);
   const [creating, setCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'error' | 'success';
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'error',
+    message: '',
+  });
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -50,7 +60,11 @@ export default function CreateGamePage() {
     e.preventDefault();
     
     if (enabledCountries.length === 0) {
-      alert('Please select at least one country');
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Please select at least one country',
+      });
       return;
     }
 
@@ -77,12 +91,20 @@ export default function CreateGamePage() {
         router.push(`/game/${data.game.id}`);
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to create game');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to create game',
+        });
         setCreating(false);
       }
     } catch (error) {
       console.error('Error creating game:', error);
-      alert('Failed to create game');
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to create game',
+      });
       setCreating(false);
     }
   }
@@ -196,7 +218,7 @@ export default function CreateGamePage() {
                   type="checkbox"
                   checked={useUSStates}
                   onChange={(e) => setUseUSStates(e.target.checked)}
-                  disabled={!enabledCountries.includes('USA')}
+                  disabled={!enabledCountries.includes('840')}
                   className="w-4 h-4"
                 />
                 <span>Use US States (instead of USA as one territory)</span>
@@ -209,7 +231,7 @@ export default function CreateGamePage() {
                   type="checkbox"
                   checked={useAUStates}
                   onChange={(e) => setUseAUStates(e.target.checked)}
-                  disabled={!enabledCountries.includes('AUS')}
+                  disabled={!enabledCountries.includes('036')}
                   className="w-4 h-4"
                 />
                 <span>Use Australian States (instead of Australia as one territory)</span>
@@ -284,6 +306,13 @@ export default function CreateGamePage() {
           </div>
         </form>
       </div>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        message={modal.message}
+        type={modal.type}
+      />
     </div>
   );
 }

@@ -262,9 +262,10 @@ export type TerritoryCooldown = Database['public']['Tables']['territory_cooldown
 
 // Extended types for joined data
 export type TerritoryWithOwnership = Territory & {
-  ownership?: Ownership & {
+  ownership?: Array<{
+    user_id: string;
     users?: User;
-  };
+  }>;
 };
 
 export type AttackWithDetails = Attack & {

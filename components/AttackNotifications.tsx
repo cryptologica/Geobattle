@@ -3,6 +3,7 @@
 import { AttackWithDetails } from '@/lib/types';
 import { Shield } from 'lucide-react';
 import { useState } from 'react';
+import Modal from './Modal';
 
 interface AttackNotificationsProps {
   attacks: AttackWithDetails[];
@@ -11,6 +12,15 @@ interface AttackNotificationsProps {
 
 export function AttackNotifications({ attacks, onDefend }: AttackNotificationsProps) {
   const [defending, setDefending] = useState<string | null>(null);
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'error' | 'success';
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'error',
+    message: '',
+  });
 
   function getTimeRemaining(expiresAt: string): string {
     const now = new Date();
@@ -53,11 +63,19 @@ export function AttackNotifications({ attacks, onDefend }: AttackNotificationsPr
       if (response.ok) {
         onDefend();
       } else {
-        alert(data.error || 'Failed to defend');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to defend',
+        });
       }
     } catch (error) {
       console.error('Defend error:', error);
-      alert('Failed to defend');
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to defend',
+      });
     } finally {
       setDefending(null);
     }
@@ -117,6 +135,13 @@ export function AttackNotifications({ attacks, onDefend }: AttackNotificationsPr
           </div>
         ))}
       </div>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        message={modal.message}
+        type={modal.type}
+      />
     </aside>
   );
 }

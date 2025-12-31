@@ -1,6 +1,6 @@
 'use client';
 
-import { Swords, Star } from 'lucide-react';
+import { Swords, Star, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { UserGameResources } from '@/lib/types';
 
@@ -8,9 +8,10 @@ interface GameHeaderProps {
   gameName: string;
   gameId: string;
   resources: UserGameResources | null;
+  isCreator?: boolean;
 }
 
-export function GameHeader({ gameName, gameId, resources }: GameHeaderProps) {
+export function GameHeader({ gameName, gameId, resources, isCreator }: GameHeaderProps) {
   return (
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -25,6 +26,17 @@ export function GameHeader({ gameName, gameId, resources }: GameHeaderProps) {
         </div>
 
         <div className="flex items-center gap-6">
+          {/* Admin Panel Button */}
+          {isCreator && (
+            <Link
+              href={`/admin/${gameId}`}
+              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              <Shield className="w-4 h-4" />
+              Admin Panel
+            </Link>
+          )}
+
           {/* Attack Resources */}
           <div className="flex items-center gap-2 group relative">
             <Swords className="w-5 h-5 text-red-600" />

@@ -4,15 +4,17 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Game, Territory, UserGameResources } from '@/lib/types';
+import { Game, TerritoryWithOwnership, UserGameResources } from '@/lib/types';
 import Link from 'next/link';
 import { Shield, Swords, Star } from 'lucide-react';
+import Modal from '@/components/Modal';
 
 interface PlayerResources {
   user: {
     id: string;
     name: string | null;
     email: string | null;
+    image: string | null;
   };
   resources: UserGameResources;
 }
@@ -23,9 +25,18 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
   const [game, setGame] = useState<Game | null>(null);
   const [isCreator, setIsCreator] = useState(false);
   const [players, setPlayers] = useState<PlayerResources[]>([]);
-  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [territories, setTerritories] = useState<TerritoryWithOwnership[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'error' | 'success';
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'error',
+    message: '',
+  });
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -58,7 +69,7 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
         .from('user_games')
         .select(`
           user_id,
-          users (id, name, email)
+          users (id, name, email, image)
         `)
         .eq('game_id', params.gameId);
 
@@ -79,10 +90,16 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
         setPlayers(playersWithResources);
       }
 
-      // Load territories
+      // Load territories with ownership
       const { data: territoriesData } = await supabase
         .from('territories')
-        .select('*')
+        .select(`
+          *,
+          ownership(
+            user_id,
+            users(id, name, image)
+          )
+        `)
         .eq('game_id', params.gameId)
         .order('name');
 
@@ -113,11 +130,51 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
         loadAdminData();
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to grant resources');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to grant resources',
+        });
       }
     } catch (error) {
-      console.error('Grant error:', error);
-      alert('Failed to grant resources');
+      console.error('Grant resources error:', error);
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to grant resources',
+      });
+    }
+  }
+
+  async function changeOwnership(territoryId: string, newOwnerId: string | null) {
+    try {
+      const response = await fetch('/api/admin/ownership', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: params.gameId,
+          territoryId,
+          newOwnerId,
+        }),
+      });
+
+      if (response.ok) {
+        loadAdminData();
+      } else {
+        const data = await response.json();
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to change ownership',
+        });
+      }
+    } catch (error) {
+      console.error('Change ownership error:', error);
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to change ownership',
+      });
     }
   }
 
@@ -137,11 +194,19 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
         loadAdminData();
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to update territory');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to update territory',
+        });
       }
     } catch (error) {
-      console.error('Update error:', error);
-      alert('Failed to update territory');
+      console.error('Toggle territory error:', error);
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to update territory',
+      });
     }
   }
 
@@ -296,48 +361,89 @@ export default function AdminPage({ params }: { params: { gameId: string } }) {
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Territory</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Type</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold">Owner</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
                     <th className="px-6 py-3 text-left text-sm font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredTerritories.map((territory) => (
-                    <tr key={territory.id}>
-                      <td className="px-6 py-4 font-medium">{territory.name}</td>
-                      <td className="px-6 py-4 text-sm capitalize">
-                        {territory.type.replace('_', ' ')}
-                      </td>
-                      <td className="px-6 py-4">
-                        {territory.is_disabled ? (
-                          <span className="text-sm bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 px-2 py-1 rounded">
-                            Disabled
-                          </span>
-                        ) : (
-                          <span className="text-sm bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-1 rounded">
-                            Enabled
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => toggleTerritory(territory.id, territory.is_disabled)}
-                          className={`text-sm px-3 py-1 rounded ${
-                            territory.is_disabled
-                              ? 'bg-green-600 hover:bg-green-700 text-white'
-                              : 'bg-gray-600 hover:bg-gray-700 text-white'
-                          }`}
-                        >
-                          {territory.is_disabled ? 'Enable' : 'Disable'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredTerritories.map((territory) => {
+                    const ownership = Array.isArray(territory.ownership) && territory.ownership.length > 0
+                      ? territory.ownership[0]
+                      : null;
+                    const currentOwner = ownership?.users;
+
+                    return (
+                      <tr key={territory.id}>
+                        <td className="px-6 py-4 font-medium">{territory.name}</td>
+                        <td className="px-6 py-4 text-sm capitalize">
+                          {territory.type.replace('_', ' ')}
+                        </td>
+                        <td className="px-6 py-4">
+                          <select
+                            value={ownership?.user_id || ''}
+                            onChange={(e) => changeOwnership(territory.id, e.target.value || null)}
+                            className="text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                          >
+                            <option value="">Unclaimed</option>
+                            {players.map((player) => (
+                              <option key={player.user.id} value={player.user.id}>
+                                {player.user.name || player.user.email}
+                              </option>
+                            ))}
+                          </select>
+                          {currentOwner && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <img
+                                src={currentOwner.image || ''}
+                                alt={currentOwner.name || ''}
+                                className="w-4 h-4 rounded-sm"
+                              />
+                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                {currentOwner.name}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {territory.is_disabled ? (
+                            <span className="text-sm bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 px-2 py-1 rounded">
+                              Disabled
+                            </span>
+                          ) : (
+                            <span className="text-sm bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-1 rounded">
+                              Enabled
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => toggleTerritory(territory.id, territory.is_disabled)}
+                            className={`text-sm px-3 py-1 rounded ${
+                              territory.is_disabled
+                                ? 'bg-green-600 hover:bg-green-700 text-white'
+                                : 'bg-gray-600 hover:bg-gray-700 text-white'
+                            }`}
+                          >
+                            {territory.is_disabled ? 'Enable' : 'Disable'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         </section>
       </div>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        message={modal.message}
+        type={modal.type}
+      />
     </div>
   );
 }

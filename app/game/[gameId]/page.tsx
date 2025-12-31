@@ -239,7 +239,12 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-      <GameHeader gameName={game.name} gameId={game.id} resources={resources} />
+      <GameHeader 
+        gameName={game.name} 
+        gameId={game.id} 
+        resources={resources}
+        isCreator={game.creator_id === session!.user.id}
+      />
       
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-auto">

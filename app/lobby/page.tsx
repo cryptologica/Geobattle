@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { GameWithCreator } from '@/lib/types';
 import Link from 'next/link';
+import Modal from '@/components/Modal';
 
 export default function LobbyPage() {
   const { data: session, status } = useSession();
@@ -13,6 +14,16 @@ export default function LobbyPage() {
   const [myGames, setMyGames] = useState<GameWithCreator[]>([]);
   const [availableGames, setAvailableGames] = useState<GameWithCreator[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'error' | 'success' | 'confirm';
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'error',
+    message: '',
+  });
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -83,30 +94,73 @@ export default function LobbyPage() {
         loadGames();
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to join game');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: data.error || 'Failed to join game',
+        });
       }
     } catch (error) {
       console.error('Error joining game:', error);
-      alert('Failed to join game');
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to join game',
+      });
     }
   }
 
   async function leaveGame(gameId: string) {
-    if (!confirm('Are you sure you want to leave this game?')) return;
-
     try {
+      // First attempt to leave (will check if confirmation needed)
       const response = await fetch(`/api/game/join?gameId=${gameId}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
-        loadGames();
+        const data = await response.json();
+        
+        // If confirmation is required (last player), ask user
+        if (data.requiresConfirmation) {
+          setModal({
+            isOpen: true,
+            type: 'confirm',
+            message: data.message + '\n\nAre you sure you want to leave and delete this game?',
+            onConfirm: async () => {
+              // Try again with deleteGame flag
+              const confirmResponse = await fetch(`/api/game/join?gameId=${gameId}&deleteGame=true`, {
+                method: 'DELETE',
+              });
+              
+              if (confirmResponse.ok) {
+                loadGames();
+              } else {
+                setModal({
+                  isOpen: true,
+                  type: 'error',
+                  message: 'Failed to leave game',
+                });
+              }
+            },
+          });
+        } else {
+          // Normal leave, no confirmation needed
+          loadGames();
+        }
       } else {
-        alert('Failed to leave game');
+        setModal({
+          isOpen: true,
+          type: 'error',
+          message: 'Failed to leave game',
+        });
       }
     } catch (error) {
       console.error('Error leaving game:', error);
-      alert('Failed to leave game');
+      setModal({
+        isOpen: true,
+        type: 'error',
+        message: 'Failed to leave game',
+      });
     }
   }
 
@@ -216,6 +270,14 @@ export default function LobbyPage() {
           )}
         </section>
       </div>
+
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        message={modal.message}
+        type={modal.type}
+        onConfirm={modal.onConfirm}
+      />
     </div>
   );
 }
